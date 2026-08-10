@@ -1,21 +1,44 @@
 import { createContext, ReactNode, useContext, useState } from "react";
 
+export type Expense = {
+  id: string;
+  paidBy: string;
+  paidFor: string;
+  amountInPence: number;
+};
+
 export type Event = {
   id: string;
   name: string;
   description: string;
   members: string[];
+  expenses: Expense[];
 };
 
 type EventContextType = {
   events: Event[];
+
   createEvent: (
     name: string,
     description: string,
     members: string[]
   ) => Event;
-  addMember: (eventId: string, memberName: string) => void;
-  deleteEvent: (eventId: string) => void;
+
+  addMember: (
+    eventId: string,
+    memberName: string
+  ) => void;
+
+  addExpense: (
+    eventId: string,
+    paidBy: string,
+    paidFor: string,
+    amountInPence: number
+  ) => void;
+
+  deleteEvent: (
+    eventId: string
+  ) => void;
 };
 
 const EventContext = createContext<EventContextType | undefined>(undefined);
@@ -33,6 +56,7 @@ export function EventProvider({ children }: { children: ReactNode }) {
       name,
       description,
       members,
+      expenses: [],
     };
 
     setEvents((currentEvents) => [
@@ -43,21 +67,57 @@ export function EventProvider({ children }: { children: ReactNode }) {
     return newEvent;
   }
 
-  function deleteEvent(eventId: string) {
-  setEvents((currentEvents) =>
-    currentEvents.filter((event) => event.id !== eventId)
-  );
-  } 
-
-  function addMember(eventId: string, memberName: string) {
+  function addMember(
+    eventId: string,
+    memberName: string
+  ) {
     setEvents((currentEvents) =>
       currentEvents.map((event) =>
         event.id === eventId
           ? {
               ...event,
-              members: [...event.members, memberName],
+              members: [
+                ...event.members,
+                memberName,
+              ],
             }
           : event
+      )
+    );
+  }
+
+  function addExpense(
+    eventId: string,
+    paidBy: string,
+    paidFor: string,
+    amountInPence: number
+  ) {
+    const newExpense: Expense = {
+      id: Date.now().toString(),
+      paidBy,
+      paidFor,
+      amountInPence,
+    };
+
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              expenses: [
+                ...event.expenses,
+                newExpense,
+              ],
+            }
+          : event
+      )
+    );
+  }
+
+  function deleteEvent(eventId: string) {
+    setEvents((currentEvents) =>
+      currentEvents.filter(
+        (event) => event.id !== eventId
       )
     );
   }
@@ -68,7 +128,8 @@ export function EventProvider({ children }: { children: ReactNode }) {
         events,
         createEvent,
         addMember,
-        deleteEvent
+        addExpense,
+        deleteEvent,
       }}
     >
       {children}
