@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   Alert,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,11 +15,17 @@ import { useEvents } from "../../context/EventContext";
 export default function EventDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const { events, addMember, deleteEvent } = useEvents();
+  const {
+    events,
+    addMember,
+    deleteEvent,
+  } = useEvents();
 
   const [memberName, setMemberName] = useState("");
 
-  const event = events.find((item) => item.id === id);
+  const event = events.find(
+    (item) => item.id === id
+  );
 
   function handleAddMember() {
     const trimmedName = memberName.trim();
@@ -68,72 +75,113 @@ export default function EventDetailsScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        {event.name}
-      </Text>
-
-      {event.description ? (
-        <Text style={styles.description}>
-          {event.description}
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.title}>
+          {event.name}
         </Text>
-      ) : null}
 
-      <Text style={styles.sectionTitle}>
-        Members
-      </Text>
+        {event.description ? (
+          <Text style={styles.description}>
+            {event.description}
+          </Text>
+        ) : null}
 
-      {event.members.length === 0 ? (
-        <Text style={styles.emptyText}>
-          No members have been added yet.
+        <Text style={styles.sectionTitle}>
+          Members
         </Text>
-      ) : (
-        event.members.map((member, index) => (
-          <View
-            key={`${member}-${index}`}
-            style={styles.memberCard}
+
+        {event.members.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No members have been added yet.
+          </Text>
+        ) : (
+          event.members.map((member, index) => (
+            <View
+              key={`${member}-${index}`}
+              style={styles.memberCard}
+            >
+              <Text style={styles.memberName}>
+                {member}
+              </Text>
+            </View>
+          ))
+        )}
+
+        <View style={styles.memberRow}>
+          <TextInput
+            style={styles.memberInput}
+            placeholder="Add another member"
+            placeholderTextColor="#9CA3AF"
+            value={memberName}
+            onChangeText={setMemberName}
+          />
+
+          <Pressable
+            style={styles.addMemberButton}
+            onPress={handleAddMember}
           >
-            <Text style={styles.memberName}>
-              {member}
+            <Text style={styles.addMemberButtonText}>
+              Add
             </Text>
-          </View>
-        ))
-      )}
+          </Pressable>
+        </View>
 
-      <View style={styles.memberRow}>
-        <TextInput
-          style={styles.memberInput}
-          placeholder="Add another member"
-          placeholderTextColor="#9CA3AF"
-          value={memberName}
-          onChangeText={setMemberName}
-        />
+        <Text style={styles.sectionTitle}>
+          Expenses
+        </Text>
+
+        {event.expenses.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No expenses have been added yet.
+          </Text>
+        ) : (
+          event.expenses.map((expense) => (
+            <View
+              key={expense.id}
+              style={styles.expenseCard}
+            >
+              <View>
+                <Text style={styles.expenseTitle}>
+                  {expense.paidBy} paid for {expense.paidFor}
+                </Text>
+
+                <Text style={styles.expenseSubtitle}>
+                  Expense
+                </Text>
+              </View>
+
+              <Text style={styles.expenseAmount}>
+                £{(expense.amountInPence / 100).toFixed(2)}
+              </Text>
+            </View>
+          ))
+        )}
 
         <Pressable
-          style={styles.addMemberButton}
-          onPress={handleAddMember}
+          style={styles.expenseButton}
+          onPress={() =>
+            router.push({
+              pathname: "/events/[id]/add-expense",
+              params: {
+                id: event.id,
+              },
+            })
+          }
         >
-          <Text style={styles.addMemberButtonText}>
-            Add
+          <Text style={styles.expenseButtonText}>
+            + Add Expense
           </Text>
         </Pressable>
-      </View>
 
-      <Text style={styles.sectionTitle}>
-        Expenses
-      </Text>
-
-      <Text style={styles.emptyText}>
-        No expenses have been added yet.
-      </Text>
-
-      <Pressable
-        style={styles.deleteButton}
-        onPress={handleDeleteEvent}
-      >
-        <Text style={styles.deleteButtonText}>
-          Delete Event
-        </Text>
-      </Pressable>
+        <Pressable
+          style={styles.deleteButton}
+          onPress={handleDeleteEvent}
+        >
+          <Text style={styles.deleteButtonText}>
+            Delete Event
+          </Text>
+        </Pressable>
+      </ScrollView>
     </View>
   );
 }
@@ -142,8 +190,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "white",
+  },
+
+  content: {
     paddingHorizontal: 24,
     paddingTop: 32,
+    paddingBottom: 50,
   },
 
   title: {
@@ -212,6 +264,50 @@ const styles = StyleSheet.create({
 
   addMemberButtonText: {
     color: "white",
+    fontWeight: "600",
+  },
+
+  expenseCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+  },
+
+  expenseTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
+  expenseSubtitle: {
+    fontSize: 13,
+    color: "#9CA3AF",
+    marginTop: 4,
+  },
+
+  expenseAmount: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
+
+  expenseButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 16,
+  },
+
+  expenseButtonText: {
+    color: "white",
+    fontSize: 16,
     fontWeight: "600",
   },
 
