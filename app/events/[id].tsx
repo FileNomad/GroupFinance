@@ -1,0 +1,187 @@
+import { useLocalSearchParams } from "expo-router";
+import { useState } from "react";
+import {
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
+} from "react-native";
+
+import { useEvents } from "../../context/EventContext";
+
+export default function EventDetailsScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+
+  const { events, addMember } = useEvents();
+
+  const [memberName, setMemberName] = useState("");
+
+  const event = events.find((item) => item.id === id);
+
+  function handleAddMember() {
+    const trimmedName = memberName.trim();
+
+    if (!trimmedName || !event) {
+      return;
+    }
+
+    addMember(event.id, trimmedName);
+    setMemberName("");
+  }
+
+  if (!event) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.notFoundText}>
+          Event not found.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>
+        {event.name}
+      </Text>
+
+      {event.description ? (
+        <Text style={styles.description}>
+          {event.description}
+        </Text>
+      ) : null}
+
+      <Text style={styles.sectionTitle}>
+        Members
+      </Text>
+
+      {event.members.length === 0 ? (
+        <Text style={styles.emptyText}>
+          No members have been added yet.
+        </Text>
+      ) : (
+        event.members.map((member, index) => (
+          <View
+            key={`${member}-${index}`}
+            style={styles.memberCard}
+          >
+            <Text style={styles.memberName}>
+              {member}
+            </Text>
+          </View>
+        ))
+      )}
+
+      <View style={styles.memberRow}>
+        <TextInput
+          style={styles.memberInput}
+          placeholder="Add another member"
+          placeholderTextColor="#9CA3AF"
+          value={memberName}
+          onChangeText={setMemberName}
+        />
+
+        <Pressable
+          style={styles.addMemberButton}
+          onPress={handleAddMember}
+        >
+          <Text style={styles.addMemberButtonText}>
+            Add
+          </Text>
+        </Pressable>
+      </View>
+
+      <Text style={styles.sectionTitle}>
+        Expenses
+      </Text>
+
+      <Text style={styles.emptyText}>
+        No expenses have been added yet.
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "white",
+    paddingHorizontal: 24,
+    paddingTop: 32,
+  },
+
+  title: {
+    fontSize: 30,
+    fontWeight: "700",
+    color: "#111827",
+  },
+
+  description: {
+    fontSize: 16,
+    color: "#6B7280",
+    marginTop: 10,
+    lineHeight: 23,
+  },
+
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#111827",
+    marginTop: 32,
+    marginBottom: 12,
+  },
+
+  emptyText: {
+    fontSize: 15,
+    color: "#9CA3AF",
+  },
+
+  memberCard: {
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+  },
+
+  memberName: {
+    fontSize: 16,
+    color: "#111827",
+    fontWeight: "500",
+  },
+
+  memberRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 16,
+  },
+
+  memberInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: "#111827",
+  },
+
+  addMemberButton: {
+    backgroundColor: "#111827",
+    paddingHorizontal: 20,
+    justifyContent: "center",
+    borderRadius: 12,
+  },
+
+  addMemberButtonText: {
+    color: "white",
+    fontWeight: "600",
+  },
+
+  notFoundText: {
+    fontSize: 16,
+    color: "#6B7280",
+  },
+});
