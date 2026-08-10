@@ -15,6 +15,7 @@ type EventContextType = {
     members: string[]
   ) => Event;
   addMember: (eventId: string, memberName: string) => void;
+  deleteEvent: (eventId: string) => void;
 };
 
 const EventContext = createContext<EventContextType | undefined>(undefined);
@@ -42,6 +43,12 @@ export function EventProvider({ children }: { children: ReactNode }) {
     return newEvent;
   }
 
+  function deleteEvent(eventId: string) {
+  setEvents((currentEvents) =>
+    currentEvents.filter((event) => event.id !== eventId)
+  );
+  } 
+
   function addMember(eventId: string, memberName: string) {
     setEvents((currentEvents) =>
       currentEvents.map((event) =>
@@ -61,6 +68,7 @@ export function EventProvider({ children }: { children: ReactNode }) {
         events,
         createEvent,
         addMember,
+        deleteEvent
       }}
     >
       {children}
