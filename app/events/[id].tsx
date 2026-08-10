@@ -1,11 +1,12 @@
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import {
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { useEvents } from "../../context/EventContext";
@@ -13,7 +14,7 @@ import { useEvents } from "../../context/EventContext";
 export default function EventDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
 
-  const { events, addMember } = useEvents();
+  const { events, addMember, deleteEvent } = useEvents();
 
   const [memberName, setMemberName] = useState("");
 
@@ -28,6 +29,31 @@ export default function EventDetailsScreen() {
 
     addMember(event.id, trimmedName);
     setMemberName("");
+  }
+
+  function handleDeleteEvent() {
+    if (!event) {
+      return;
+    }
+
+    Alert.alert(
+      "Delete event?",
+      `Are you sure you want to delete "${event.name}"?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteEvent(event.id);
+            router.replace("/");
+          },
+        },
+      ]
+    );
   }
 
   if (!event) {
@@ -99,6 +125,15 @@ export default function EventDetailsScreen() {
       <Text style={styles.emptyText}>
         No expenses have been added yet.
       </Text>
+
+      <Pressable
+        style={styles.deleteButton}
+        onPress={handleDeleteEvent}
+      >
+        <Text style={styles.deleteButtonText}>
+          Delete Event
+        </Text>
+      </Pressable>
     </View>
   );
 }
@@ -177,6 +212,21 @@ const styles = StyleSheet.create({
 
   addMemberButtonText: {
     color: "white",
+    fontWeight: "600",
+  },
+
+  deleteButton: {
+    marginTop: 40,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DC2626",
+    alignItems: "center",
+  },
+
+  deleteButtonText: {
+    color: "#DC2626",
+    fontSize: 16,
     fontWeight: "600",
   },
 
