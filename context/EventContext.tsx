@@ -8,7 +8,9 @@ import {
 export type TransactionStatus =
   | "pending"
   | "confirmed"
-  | "rejected";
+  | "rejected"
+  | "payment_pending"
+  | "settled";
 
 export type Transaction = {
   id: string;
@@ -64,6 +66,21 @@ type EventContextType = {
     transactionId: string
   ) => void;
 
+  markTransactionPaid: (
+    eventId: string,
+    transactionId: string
+  ) => void;
+
+  confirmSettlement: (
+    eventId: string,
+    transactionId: string
+  ) => void;
+
+  rejectSettlement: (
+    eventId: string,
+    transactionId: string
+  ) => void;
+
   deleteEvent: (
     eventId: string
   ) => void;
@@ -80,6 +97,7 @@ export function EventProvider({
   children: ReactNode;
 }) {
   const [events, setEvents] = useState<Event[]>([]);
+
   const [currentUser, setCurrentUser] =
     useState("Ben");
 
@@ -168,9 +186,10 @@ export function EventProvider({
     );
   }
 
-  function confirmTransaction(
+  function updateTransactionStatus(
     eventId: string,
-    transactionId: string
+    transactionId: string,
+    status: TransactionStatus
   ) {
     setEvents((currentEvents) =>
       currentEvents.map((event) =>
@@ -184,7 +203,7 @@ export function EventProvider({
                     transactionId
                       ? {
                           ...transaction,
-                          status: "confirmed",
+                          status,
                         }
                       : transaction
                 ),
@@ -194,29 +213,58 @@ export function EventProvider({
     );
   }
 
+  function confirmTransaction(
+    eventId: string,
+    transactionId: string
+  ) {
+    updateTransactionStatus(
+      eventId,
+      transactionId,
+      "confirmed"
+    );
+  }
+
   function rejectTransaction(
     eventId: string,
     transactionId: string
   ) {
-    setEvents((currentEvents) =>
-      currentEvents.map((event) =>
-        event.id === eventId
-          ? {
-              ...event,
-              transactions:
-                event.transactions.map(
-                  (transaction) =>
-                    transaction.id ===
-                    transactionId
-                      ? {
-                          ...transaction,
-                          status: "rejected",
-                        }
-                      : transaction
-                ),
-            }
-          : event
-      )
+    updateTransactionStatus(
+      eventId,
+      transactionId,
+      "rejected"
+    );
+  }
+
+  function markTransactionPaid(
+    eventId: string,
+    transactionId: string
+  ) {
+    updateTransactionStatus(
+      eventId,
+      transactionId,
+      "payment_pending"
+    );
+  }
+
+  function confirmSettlement(
+    eventId: string,
+    transactionId: string
+  ) {
+    updateTransactionStatus(
+      eventId,
+      transactionId,
+      "settled"
+    );
+  }
+
+  function rejectSettlement(
+    eventId: string,
+    transactionId: string
+  ) {
+    updateTransactionStatus(
+      eventId,
+      transactionId,
+      "confirmed"
     );
   }
 
@@ -239,6 +287,9 @@ export function EventProvider({
         createTransaction,
         confirmTransaction,
         rejectTransaction,
+        markTransactionPaid,
+        confirmSettlement,
+        rejectSettlement,
         deleteEvent,
       }}
     >
