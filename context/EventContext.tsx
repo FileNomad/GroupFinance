@@ -1,10 +1,23 @@
-import { createContext, ReactNode, useContext, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useState,
+} from "react";
 
-export type Expense = {
+export type TransactionStatus =
+  | "pending"
+  | "confirmed"
+  | "rejected";
+
+export type Transaction = {
   id: string;
-  paidBy: string;
-  paidFor: string;
+  debtor: string;
+  creditor: string;
   amountInPence: number;
+  description: string;
+  createdAt: string;
+  status: TransactionStatus;
 };
 
 export type Event = {
@@ -12,11 +25,12 @@ export type Event = {
   name: string;
   description: string;
   members: string[];
-  expenses: Expense[];
+  transactions: Transaction[];
 };
 
 type EventContextType = {
   events: Event[];
+  currentUser: string;
 
   createEvent: (
     name: string,
@@ -29,11 +43,21 @@ type EventContextType = {
     memberName: string
   ) => void;
 
-  addExpense: (
+  createTransaction: (
     eventId: string,
-    paidBy: string,
-    paidFor: string,
-    amountInPence: number
+    creditor: string,
+    amountInPence: number,
+    description: string
+  ) => void;
+
+  confirmTransaction: (
+    eventId: string,
+    transactionId: string
+  ) => void;
+
+  rejectTransaction: (
+    eventId: string,
+    transactionId: string
   ) => void;
 
   deleteEvent: (
@@ -41,22 +65,34 @@ type EventContextType = {
   ) => void;
 };
 
-const EventContext = createContext<EventContextType | undefined>(undefined);
+const EventContext =
+  createContext<EventContextType | undefined>(undefined);
 
-export function EventProvider({ children }: { children: ReactNode }) {
+export function EventProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [events, setEvents] = useState<Event[]>([]);
+
+  // Temporary until Supabase authentication is added.
+  const currentUser = "Ben";
 
   function createEvent(
     name: string,
     description: string,
     members: string[]
   ) {
+    const eventMembers = members.includes(currentUser)
+      ? members
+      : [currentUser, ...members];
+
     const newEvent: Event = {
       id: Date.now().toString(),
       name,
       description,
-      members,
-      expenses: [],
+      members: eventMembers,
+      transactions: [],
     };
 
     setEvents((currentEvents) => [
@@ -72,31 +108,40 @@ export function EventProvider({ children }: { children: ReactNode }) {
     memberName: string
   ) {
     setEvents((currentEvents) =>
-      currentEvents.map((event) =>
-        event.id === eventId
-          ? {
-              ...event,
-              members: [
-                ...event.members,
-                memberName,
-              ],
-            }
-          : event
-      )
+      currentEvents.map((event) => {
+        if (event.id !== eventId) {
+          return event;
+        }
+
+        if (event.members.includes(memberName)) {
+          return event;
+        }
+
+        return {
+          ...event,
+          members: [
+            ...event.members,
+            memberName,
+          ],
+        };
+      })
     );
   }
 
-  function addExpense(
+  function createTransaction(
     eventId: string,
-    paidBy: string,
-    paidFor: string,
-    amountInPence: number
+    creditor: string,
+    amountInPence: number,
+    description: string
   ) {
-    const newExpense: Expense = {
+    const newTransaction: Transaction = {
       id: Date.now().toString(),
-      paidBy,
-      paidFor,
+      debtor: currentUser,
+      creditor,
       amountInPence,
+      description,
+      createdAt: new Date().toISOString(),
+      status: "pending",
     };
 
     setEvents((currentEvents) =>
@@ -104,10 +149,60 @@ export function EventProvider({ children }: { children: ReactNode }) {
         event.id === eventId
           ? {
               ...event,
-              expenses: [
-                ...event.expenses,
-                newExpense,
+              transactions: [
+                ...event.transactions,
+                newTransaction,
               ],
+            }
+          : event
+      )
+    );
+  }
+
+  function confirmTransaction(
+    eventId: string,
+    transactionId: string
+  ) {
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              transactions:
+                event.transactions.map(
+                  (transaction) =>
+                    transaction.id === transactionId
+                      ? {
+                          ...transaction,
+                          status: "confirmed",
+                        }
+                      : transaction
+                ),
+            }
+          : event
+      )
+    );
+  }
+
+  function rejectTransaction(
+    eventId: string,
+    transactionId: string
+  ) {
+    setEvents((currentEvents) =>
+      currentEvents.map((event) =>
+        event.id === eventId
+          ? {
+              ...event,
+              transactions:
+                event.transactions.map(
+                  (transaction) =>
+                    transaction.id === transactionId
+                      ? {
+                          ...transaction,
+                          status: "rejected",
+                        }
+                      : transaction
+                ),
             }
           : event
       )
@@ -126,9 +221,12 @@ export function EventProvider({ children }: { children: ReactNode }) {
     <EventContext.Provider
       value={{
         events,
+        currentUser,
         createEvent,
         addMember,
-        addExpense,
+        createTransaction,
+        confirmTransaction,
+        rejectTransaction,
         deleteEvent,
       }}
     >
