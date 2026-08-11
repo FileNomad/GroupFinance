@@ -32,6 +32,10 @@ type EventContextType = {
   events: Event[];
   currentUser: string;
 
+  setCurrentUser: (
+    memberName: string
+  ) => void;
+
   createEvent: (
     name: string,
     description: string,
@@ -66,7 +70,9 @@ type EventContextType = {
 };
 
 const EventContext =
-  createContext<EventContextType | undefined>(undefined);
+  createContext<EventContextType | undefined>(
+    undefined
+  );
 
 export function EventProvider({
   children,
@@ -74,16 +80,17 @@ export function EventProvider({
   children: ReactNode;
 }) {
   const [events, setEvents] = useState<Event[]>([]);
-
-  // Temporary until Supabase authentication is added.
-  const currentUser = "Ben";
+  const [currentUser, setCurrentUser] =
+    useState("Ben");
 
   function createEvent(
     name: string,
     description: string,
     members: string[]
   ) {
-    const eventMembers = members.includes(currentUser)
+    const eventMembers = members.includes(
+      currentUser
+    )
       ? members
       : [currentUser, ...members];
 
@@ -113,7 +120,9 @@ export function EventProvider({
           return event;
         }
 
-        if (event.members.includes(memberName)) {
+        if (
+          event.members.includes(memberName)
+        ) {
           return event;
         }
 
@@ -171,7 +180,8 @@ export function EventProvider({
               transactions:
                 event.transactions.map(
                   (transaction) =>
-                    transaction.id === transactionId
+                    transaction.id ===
+                    transactionId
                       ? {
                           ...transaction,
                           status: "confirmed",
@@ -196,7 +206,8 @@ export function EventProvider({
               transactions:
                 event.transactions.map(
                   (transaction) =>
-                    transaction.id === transactionId
+                    transaction.id ===
+                    transactionId
                       ? {
                           ...transaction,
                           status: "rejected",
@@ -222,6 +233,7 @@ export function EventProvider({
       value={{
         events,
         currentUser,
+        setCurrentUser,
         createEvent,
         addMember,
         createTransaction,

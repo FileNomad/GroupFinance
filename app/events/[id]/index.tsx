@@ -1,16 +1,16 @@
 import {
-    router,
-    useLocalSearchParams,
+  router,
+  useLocalSearchParams,
 } from "expo-router";
 import { useState } from "react";
 import {
-    Alert,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { useEvents } from "../../../context/EventContext";
@@ -22,6 +22,7 @@ export default function EventDetailsScreen() {
   const {
     events,
     currentUser,
+    setCurrentUser,
     addMember,
     confirmTransaction,
     rejectTransaction,
@@ -120,7 +121,7 @@ export default function EventDetailsScreen() {
 
     confirmedTransactions.forEach(
       (transaction) => {
-        const first = [
+        const pair = [
           transaction.debtor,
           transaction.creditor,
         ]
@@ -133,8 +134,8 @@ export default function EventDetailsScreen() {
             ? 1
             : -1;
 
-        balances[first] =
-          (balances[first] || 0) +
+        balances[pair] =
+          (balances[pair] || 0) +
           transaction.amountInPence *
             direction;
       }
@@ -160,6 +161,42 @@ export default function EventDetailsScreen() {
             {event.description}
           </Text>
         ) : null}
+
+        <Text style={styles.sectionTitle}>
+          Testing As
+        </Text>
+
+        <View style={styles.userSwitcher}>
+          {event.members.map(
+            (member, index) => (
+              <Pressable
+                key={`${member}-${index}`}
+                style={[
+                  styles.userButton,
+                  currentUser === member &&
+                    styles.userButtonSelected,
+                ]}
+                onPress={() =>
+                  setCurrentUser(member)
+                }
+              >
+                <Text
+                  style={[
+                    styles.userButtonText,
+                    currentUser === member &&
+                      styles.userButtonTextSelected,
+                  ]}
+                >
+                  {member}
+                </Text>
+              </Pressable>
+            )
+          )}
+        </View>
+
+        <Text style={styles.currentUserText}>
+          You are testing as {currentUser}
+        </Text>
 
         <Text style={styles.sectionTitle}>
           Members
@@ -215,7 +252,9 @@ export default function EventDetailsScreen() {
             (transaction) => (
               <View
                 key={transaction.id}
-                style={styles.transactionCard}
+                style={
+                  styles.transactionCard
+                }
               >
                 <Text
                   style={
@@ -322,7 +361,9 @@ export default function EventDetailsScreen() {
             (transaction) => (
               <View
                 key={transaction.id}
-                style={styles.transactionCard}
+                style={
+                  styles.transactionCard
+                }
               >
                 <Text
                   style={
@@ -406,7 +447,9 @@ export default function EventDetailsScreen() {
         )}
 
         <Pressable
-          style={styles.transactionButton}
+          style={
+            styles.transactionButton
+          }
           onPress={() =>
             router.push({
               pathname:
@@ -472,6 +515,40 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginTop: 32,
     marginBottom: 12,
+  },
+
+  userSwitcher: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+
+  userButton: {
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+
+  userButtonSelected: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+
+  userButtonText: {
+    color: "#374151",
+    fontWeight: "600",
+  },
+
+  userButtonTextSelected: {
+    color: "white",
+  },
+
+  currentUserText: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginTop: 10,
   },
 
   emptyText: {
