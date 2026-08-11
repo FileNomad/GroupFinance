@@ -26,6 +26,9 @@ export default function EventDetailsScreen() {
     addMember,
     confirmTransaction,
     rejectTransaction,
+    markTransactionPaid,
+    confirmSettlement,
+    rejectSettlement,
     deleteEvent,
   } = useEvents();
 
@@ -97,10 +100,18 @@ export default function EventDetailsScreen() {
         transaction.status === "pending"
     );
 
-  const confirmedTransactions =
+  const activeTransactions =
     event.transactions.filter(
       (transaction) =>
-        transaction.status === "confirmed"
+        transaction.status === "confirmed" ||
+        transaction.status ===
+          "payment_pending"
+    );
+
+  const settledTransactions =
+    event.transactions.filter(
+      (transaction) =>
+        transaction.status === "settled"
     );
 
   function formatDate(dateString: string) {
@@ -119,7 +130,7 @@ export default function EventDetailsScreen() {
       number
     > = {};
 
-    confirmedTransactions.forEach(
+    activeTransactions.forEach(
       (transaction) => {
         const pair = [
           transaction.debtor,
@@ -291,12 +302,12 @@ export default function EventDetailsScreen() {
                 transaction.creditor ? (
                   <View
                     style={
-                      styles.confirmationRow
+                      styles.actionRow
                     }
                   >
                     <Pressable
                       style={
-                        styles.confirmButton
+                        styles.primaryButton
                       }
                       onPress={() =>
                         confirmTransaction(
@@ -307,7 +318,7 @@ export default function EventDetailsScreen() {
                     >
                       <Text
                         style={
-                          styles.confirmButtonText
+                          styles.primaryButtonText
                         }
                       >
                         Confirm
@@ -336,7 +347,7 @@ export default function EventDetailsScreen() {
                   </View>
                 ) : (
                   <Text
-                    style={styles.pendingText}
+                    style={styles.statusText}
                   >
                     Waiting for{" "}
                     {transaction.creditor}
@@ -351,13 +362,13 @@ export default function EventDetailsScreen() {
           Transactions
         </Text>
 
-        {confirmedTransactions.length ===
+        {activeTransactions.length ===
         0 ? (
           <Text style={styles.emptyText}>
             No confirmed transactions yet.
           </Text>
         ) : (
-          confirmedTransactions.map(
+          activeTransactions.map(
             (transaction) => (
               <View
                 key={transaction.id}
@@ -395,6 +406,104 @@ export default function EventDetailsScreen() {
                     transaction.createdAt
                   )}
                 </Text>
+
+                {transaction.status ===
+                  "confirmed" &&
+                currentUser ===
+                  transaction.debtor ? (
+                  <Pressable
+                    style={
+                      styles.markPaidButton
+                    }
+                    onPress={() =>
+                      markTransactionPaid(
+                        event.id,
+                        transaction.id
+                      )
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.markPaidButtonText
+                      }
+                    >
+                      Mark as Paid
+                    </Text>
+                  </Pressable>
+                ) : null}
+
+                {transaction.status ===
+                  "payment_pending" &&
+                currentUser ===
+                  transaction.debtor ? (
+                  <Text
+                    style={styles.statusText}
+                  >
+                    Waiting for{" "}
+                    {transaction.creditor} to
+                    confirm payment
+                  </Text>
+                ) : null}
+
+                {transaction.status ===
+                  "payment_pending" &&
+                currentUser ===
+                  transaction.creditor ? (
+                  <>
+                    <Text
+                      style={
+                        styles.paymentNotice
+                      }
+                    >
+                      {transaction.debtor} says
+                      this has been paid.
+                    </Text>
+
+                    <View
+                      style={styles.actionRow}
+                    >
+                      <Pressable
+                        style={
+                          styles.primaryButton
+                        }
+                        onPress={() =>
+                          confirmSettlement(
+                            event.id,
+                            transaction.id
+                          )
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.primaryButtonText
+                          }
+                        >
+                          Confirm Payment
+                        </Text>
+                      </Pressable>
+
+                      <Pressable
+                        style={
+                          styles.rejectButton
+                        }
+                        onPress={() =>
+                          rejectSettlement(
+                            event.id,
+                            transaction.id
+                          )
+                        }
+                      >
+                        <Text
+                          style={
+                            styles.rejectButtonText
+                          }
+                        >
+                          Not Received
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : null}
               </View>
             )
           )
@@ -404,8 +513,9 @@ export default function EventDetailsScreen() {
           Net Balance
         </Text>
 
-        {Object.keys(balances).length ===
-        0 ? (
+        {Object.entries(balances).filter(
+          ([, balance]) => balance !== 0
+        ).length === 0 ? (
           <Text style={styles.emptyText}>
             No outstanding balance.
           </Text>
@@ -443,6 +553,63 @@ export default function EventDetailsScreen() {
                 </Text>
               );
             }
+          )
+        )}
+
+        <Text style={styles.sectionTitle}>
+          Settled
+        </Text>
+
+        {settledTransactions.length ===
+        0 ? (
+          <Text style={styles.emptyText}>
+            No settled transactions yet.
+          </Text>
+        ) : (
+          settledTransactions.map(
+            (transaction) => (
+              <View
+                key={transaction.id}
+                style={
+                  styles.settledCard
+                }
+              >
+                <Text
+                  style={
+                    styles.transactionSummary
+                  }
+                >
+                  {transaction.debtor} paid{" "}
+                  {transaction.creditor} £
+                  {(
+                    transaction.amountInPence /
+                    100
+                  ).toFixed(2)}
+                </Text>
+
+                <Text
+                  style={
+                    styles.transactionDescription
+                  }
+                >
+                  {transaction.description}
+                </Text>
+
+                <Text
+                  style={
+                    styles.transactionDate
+                  }
+                >
+                  {formatDate(
+                    transaction.createdAt
+                  )}
+                </Text>
+
+                <Text style={styles.settledText}>
+                  Settled
+                </Text>
+              </View>
+            )
           )
         )}
 
@@ -606,6 +773,16 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  settledCard: {
+    backgroundColor: "#F9FAFB",
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+    opacity: 0.75,
+  },
+
   transactionSummary: {
     fontSize: 16,
     fontWeight: "700",
@@ -624,19 +801,33 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  pendingText: {
+  statusText: {
     fontSize: 13,
-    color: "#9CA3AF",
+    color: "#6B7280",
     marginTop: 12,
   },
 
-  confirmationRow: {
+  paymentNotice: {
+    fontSize: 14,
+    color: "#374151",
+    fontWeight: "600",
+    marginTop: 12,
+  },
+
+  settledText: {
+    fontSize: 13,
+    color: "#6B7280",
+    fontWeight: "600",
+    marginTop: 10,
+  },
+
+  actionRow: {
     flexDirection: "row",
     gap: 10,
     marginTop: 14,
   },
 
-  confirmButton: {
+  primaryButton: {
     flex: 1,
     backgroundColor: "#111827",
     paddingVertical: 10,
@@ -644,7 +835,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  confirmButtonText: {
+  primaryButtonText: {
     color: "white",
     fontWeight: "600",
   },
@@ -660,6 +851,19 @@ const styles = StyleSheet.create({
 
   rejectButtonText: {
     color: "#DC2626",
+    fontWeight: "600",
+  },
+
+  markPaidButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 14,
+  },
+
+  markPaidButtonText: {
+    color: "white",
     fontWeight: "600",
   },
 
