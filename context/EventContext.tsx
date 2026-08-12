@@ -1,9 +1,16 @@
 import {
   createContext,
   ReactNode,
+  useCallback,
   useContext,
+  useEffect,
+  useRef,
   useState,
 } from "react";
+import { AppState } from "react-native";
+
+import { supabase } from "../lib/supabase";
+import { useAuth } from "./AuthContext";
 
 export type TransactionStatus =
   | "pending"
@@ -12,10 +19,17 @@ export type TransactionStatus =
   | "payment_pending"
   | "settled";
 
+export type Member = {
+  id: string;
+  displayName: string;
+};
+
 export type Transaction = {
   id: string;
-  debtor: string;
-  creditor: string;
+  debtorId: string;
+  creditorId: string;
+  debtorName: string;
+  creditorName: string;
   amountInPence: number;
   description: string;
   createdAt: string;
@@ -26,64 +40,65 @@ export type Event = {
   id: string;
   name: string;
   description: string;
-  members: string[];
+  createdBy: string;
+  members: Member[];
   transactions: Transaction[];
 };
 
 type EventContextType = {
   events: Event[];
-  currentUser: string;
+  loading: boolean;
+  refreshing: boolean;
 
-  setCurrentUser: (
-    memberName: string
-  ) => void;
+  refreshEvents: (
+    showIndicator?: boolean
+  ) => Promise<void>;
 
   createEvent: (
     name: string,
-    description: string,
-    members: string[]
-  ) => Event;
+    description: string
+  ) => Promise<Event | null>;
 
   addMember: (
     eventId: string,
-    memberName: string
-  ) => void;
+    displayName: string
+  ) => Promise<string | null>;
 
   createTransaction: (
     eventId: string,
-    creditor: string,
+    creditorId: string,
     amountInPence: number,
     description: string
-  ) => void;
+  ) => Promise<string | null>;
 
   confirmTransaction: (
     eventId: string,
     transactionId: string
-  ) => void;
+  ) => Promise<void>;
 
   rejectTransaction: (
     eventId: string,
     transactionId: string
-  ) => void;
+  ) => Promise<void>;
 
   markTransactionPaid: (
     eventId: string,
     transactionId: string
-  ) => void;
+  ) => Promise<void>;
 
   confirmSettlement: (
     eventId: string,
     transactionId: string
-  ) => void;
+  ) => Promise<void>;
 
   rejectSettlement: (
     eventId: string,
     transactionId: string
-  ) => void;
+  ) => Promise<void>;
 
   deleteEvent: (
     eventId: string
-  ) => void;
+  ) => Promise<void>;
 };
 
 const EventContext =
@@ -96,200 +111,659 @@ export function EventProvider({
 }: {
   children: ReactNode;
 }) {
-  const [events, setEvents] = useState<Event[]>([]);
+  const { session } = useAuth();
 
-  const [currentUser, setCurrentUser] =
-    useState("Ben");
+  const [events, setEvents] =
+    useState<Event[]>([]);
 
-  function createEvent(
-    name: string,
-    description: string,
-    members: string[]
-  ) {
-    const eventMembers = members.includes(
-      currentUser
-    )
-      ? members
-      : [currentUser, ...members];
+  const [loading, setLoading] =
+    useState(false);
 
-    const newEvent: Event = {
-      id: Date.now().toString(),
-      name,
-      description,
-      members: eventMembers,
-      transactions: [],
-    };
+  const [refreshing, setRefreshing] =
+    useState(false);
 
-    setEvents((currentEvents) => [
-      ...currentEvents,
-      newEvent,
-    ]);
+  const refreshInProgressRef =
+    useRef<Promise<void> | null>(null);
 
-    return newEvent;
-  }
+  const refreshQueuedRef =
+    useRef(false);
 
-  function addMember(
-    eventId: string,
-    memberName: string
-  ) {
-    setEvents((currentEvents) =>
-      currentEvents.map((event) => {
-        if (event.id !== eventId) {
-          return event;
+  const realtimeTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(
+      null
+    );
+
+  const loadEventsFromDatabase =
+    useCallback(async () => {
+      if (!session) {
+        setEvents([]);
+        return;
+      }
+
+      const {
+        data: eventRows,
+        error: eventError,
+      } = await supabase
+        .from("events")
+        .select(
+          "id, name, description, created_by, created_at"
+        )
+        .order("created_at", {
+          ascending: false,
+        });
+
+      if (eventError) {
+        console.error(
+          "Failed to load events:",
+          eventError.message
+        );
+
+        return;
+      }
+
+      const loadedEvents: Event[] = [];
+
+      for (const eventRow of eventRows ?? []) {
+        const {
+          data: membershipRows,
+          error: membershipError,
+        } = await supabase
+          .from("event_members")
+          .select("user_id")
+          .eq("event_id", eventRow.id);
+
+        if (membershipError) {
+          console.error(
+            "Failed to load members:",
+            membershipError.message
+          );
+
+          continue;
+        }
+
+        const memberIds = (
+          membershipRows ?? []
+        ).map(
+          (membership) =>
+            membership.user_id
+        );
+
+        let members: Member[] = [];
+
+        if (memberIds.length > 0) {
+          const {
+            data: profileRows,
+            error: profileError,
+          } = await supabase
+            .from("profiles")
+            .select(
+              "id, display_name"
+            )
+            .in("id", memberIds);
+
+          if (profileError) {
+            console.error(
+              "Failed to load member profiles:",
+              profileError.message
+            );
+          } else {
+            members = (
+              profileRows ?? []
+            ).map((profile) => ({
+              id: profile.id,
+              displayName:
+                profile.display_name,
+            }));
+          }
+        }
+
+        const memberNameMap =
+          new Map<string, string>();
+
+        members.forEach((member) => {
+          memberNameMap.set(
+            member.id,
+            member.displayName
+          );
+        });
+
+        const {
+          data: transactionRows,
+          error: transactionError,
+        } = await supabase
+          .from("transactions")
+          .select(
+            `
+            id,
+            debtor_id,
+            creditor_id,
+            amount_in_pence,
+            description,
+            created_at,
+            status
+            `
+          )
+          .eq(
+            "event_id",
+            eventRow.id
+          )
+          .order("created_at", {
+            ascending: false,
+          });
+
+        if (transactionError) {
+          console.error(
+            "Failed to load transactions:",
+            transactionError.message
+          );
+        }
+
+        const transactions: Transaction[] =
+          (
+            transactionRows ?? []
+          ).map((transaction) => ({
+            id: transaction.id,
+
+            debtorId:
+              transaction.debtor_id,
+
+            creditorId:
+              transaction.creditor_id,
+
+            debtorName:
+              memberNameMap.get(
+                transaction.debtor_id
+              ) ?? "Unknown",
+
+            creditorName:
+              memberNameMap.get(
+                transaction.creditor_id
+              ) ?? "Unknown",
+
+            amountInPence:
+              transaction.amount_in_pence,
+
+            description:
+              transaction.description,
+
+            createdAt:
+              transaction.created_at,
+
+            status:
+              transaction.status as TransactionStatus,
+          }));
+
+        loadedEvents.push({
+          id: eventRow.id,
+          name: eventRow.name,
+
+          description:
+            eventRow.description,
+
+          createdBy:
+            eventRow.created_by,
+
+          members,
+          transactions,
+        });
+      }
+
+      setEvents(loadedEvents);
+    }, [session]);
+
+  const refreshEvents =
+    useCallback(
+      async (
+        showIndicator = false
+      ) => {
+        if (!session) {
+          setEvents([]);
+          return;
         }
 
         if (
-          event.members.includes(memberName)
+          refreshInProgressRef.current
         ) {
-          return event;
+          refreshQueuedRef.current =
+            true;
+
+          await refreshInProgressRef.current;
+
+          return;
         }
 
-        return {
-          ...event,
-          members: [
-            ...event.members,
-            memberName,
-          ],
-        };
-      })
+        if (showIndicator) {
+          setRefreshing(true);
+        }
+
+        const refreshPromise =
+          (async () => {
+            do {
+              refreshQueuedRef.current =
+                false;
+
+              await loadEventsFromDatabase();
+            } while (
+              refreshQueuedRef.current
+            );
+          })();
+
+        refreshInProgressRef.current =
+          refreshPromise;
+
+        try {
+          await refreshPromise;
+        } finally {
+          refreshInProgressRef.current =
+            null;
+
+          if (showIndicator) {
+            setRefreshing(false);
+          }
+        }
+      },
+      [
+        session,
+        loadEventsFromDatabase,
+      ]
     );
+
+  useEffect(() => {
+    if (!session) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
+
+    async function initialLoad() {
+      setLoading(true);
+
+      await refreshEvents();
+
+      setLoading(false);
+    }
+
+    initialLoad();
+  }, [
+    session,
+    refreshEvents,
+  ]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    function scheduleRealtimeRefresh() {
+      if (
+        realtimeTimerRef.current
+      ) {
+        clearTimeout(
+          realtimeTimerRef.current
+        );
+      }
+
+      realtimeTimerRef.current =
+        setTimeout(() => {
+          refreshEvents();
+        }, 250);
+    }
+
+    const channel = supabase
+      .channel(
+        `group-finance-${session.user.id}`
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "events",
+        },
+        (payload) => {
+          console.log(
+            "Realtime event change:",
+            payload
+          );
+
+          scheduleRealtimeRefresh();
+        }
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "event_members",
+        },
+        (payload) => {
+          console.log(
+            "Realtime membership change:",
+            payload
+          );
+
+          scheduleRealtimeRefresh();
+        }
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "transactions",
+        },
+        (payload) => {
+          console.log(
+            "Realtime transaction change:",
+            payload
+          );
+
+          scheduleRealtimeRefresh();
+        }
+      )
+
+      .subscribe((status, error) => {
+        console.log(
+          "Realtime status:",
+          status
+        );
+
+        if (error) {
+          console.error(
+            "Realtime subscription error:",
+            error
+          );
+        }
+      });
+
+    return () => {
+      if (
+        realtimeTimerRef.current
+      ) {
+        clearTimeout(
+          realtimeTimerRef.current
+        );
+
+        realtimeTimerRef.current =
+          null;
+      }
+
+      supabase.removeChannel(
+        channel
+      );
+    };
+  }, [
+    session,
+    refreshEvents,
+  ]);
+
+  useEffect(() => {
+    if (!session) {
+      return;
+    }
+
+    const subscription =
+      AppState.addEventListener(
+        "change",
+        async (nextAppState) => {
+          if (
+            nextAppState ===
+            "active"
+          ) {
+            console.log(
+              "App active - refreshing events"
+            );
+
+            await refreshEvents();
+          }
+        }
+      );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    session,
+    refreshEvents,
+  ]);
+
+  async function createEvent(
+    name: string,
+    description: string
+  ) {
+    const { data, error } =
+      await supabase.rpc(
+        "create_event",
+        {
+          p_name: name.trim(),
+          p_description:
+            description.trim(),
+        }
+      );
+
+    if (error) {
+      console.error(
+        "Failed to create event:",
+        error.message
+      );
+
+      return null;
+    }
+
+    const newEventId =
+      data as string;
+
+    await refreshEvents();
+
+    return {
+      id: newEventId,
+      name: name.trim(),
+
+      description:
+        description.trim(),
+
+      createdBy:
+        session?.user.id ?? "",
+
+      members: [],
+      transactions: [],
+    };
   }
 
-  function createTransaction(
+  async function addMember(
     eventId: string,
-    creditor: string,
+    displayName: string
+  ) {
+    const { error } =
+      await supabase.rpc(
+        "add_event_member_by_name",
+        {
+          p_event_id: eventId,
+
+          p_display_name:
+            displayName.trim(),
+        }
+      );
+
+    if (error) {
+      return error.message;
+    }
+
+    await refreshEvents();
+
+    return null;
+  }
+
+  async function createTransaction(
+    eventId: string,
+    creditorId: string,
     amountInPence: number,
     description: string
   ) {
-    const newTransaction: Transaction = {
-      id: Date.now().toString(),
-      debtor: currentUser,
-      creditor,
-      amountInPence,
-      description,
-      createdAt: new Date().toISOString(),
-      status: "pending",
-    };
+    if (!session) {
+      return "You must be signed in.";
+    }
 
-    setEvents((currentEvents) =>
-      currentEvents.map((event) =>
-        event.id === eventId
-          ? {
-              ...event,
-              transactions: [
-                ...event.transactions,
-                newTransaction,
-              ],
-            }
-          : event
-      )
-    );
+    const { error } =
+      await supabase
+        .from("transactions")
+        .insert({
+          event_id: eventId,
+
+          debtor_id:
+            session.user.id,
+
+          creditor_id:
+            creditorId,
+
+          amount_in_pence:
+            amountInPence,
+
+          description:
+            description.trim(),
+
+          status: "pending",
+        });
+
+    if (error) {
+      return error.message;
+    }
+
+    await refreshEvents();
+
+    return null;
   }
 
-  function updateTransactionStatus(
-    eventId: string,
-    transactionId: string,
-    status: TransactionStatus
-  ) {
-    setEvents((currentEvents) =>
-      currentEvents.map((event) =>
-        event.id === eventId
-          ? {
-              ...event,
-              transactions:
-                event.transactions.map(
-                  (transaction) =>
-                    transaction.id ===
-                    transactionId
-                      ? {
-                          ...transaction,
-                          status,
-                        }
-                      : transaction
-                ),
-            }
-          : event
-      )
-    );
-  }
-
-  function confirmTransaction(
+  async function runTransactionAction(
+    functionName: string,
     eventId: string,
     transactionId: string
   ) {
-    updateTransactionStatus(
-      eventId,
-      transactionId,
-      "confirmed"
-    );
+    const { error } =
+      await supabase.rpc(
+        functionName,
+        {
+          p_event_id:
+            eventId,
+
+          p_transaction_id:
+            transactionId,
+        }
+      );
+
+    if (error) {
+      console.error(
+        `${functionName} failed:`,
+        error.message
+      );
+
+      return;
+    }
+
+    await refreshEvents();
   }
 
-  function rejectTransaction(
+  async function confirmTransaction(
     eventId: string,
     transactionId: string
   ) {
-    updateTransactionStatus(
+    await runTransactionAction(
+      "confirm_transaction",
       eventId,
-      transactionId,
-      "rejected"
+      transactionId
     );
   }
 
-  function markTransactionPaid(
+  async function rejectTransaction(
     eventId: string,
     transactionId: string
   ) {
-    updateTransactionStatus(
+    await runTransactionAction(
+      "reject_transaction",
       eventId,
-      transactionId,
-      "payment_pending"
+      transactionId
     );
   }
 
-  function confirmSettlement(
+  async function markTransactionPaid(
     eventId: string,
     transactionId: string
   ) {
-    updateTransactionStatus(
+    await runTransactionAction(
+      "mark_transaction_paid",
       eventId,
-      transactionId,
-      "settled"
+      transactionId
     );
   }
 
-  function rejectSettlement(
+  async function confirmSettlement(
     eventId: string,
     transactionId: string
   ) {
-    updateTransactionStatus(
+    await runTransactionAction(
+      "confirm_settlement",
       eventId,
-      transactionId,
-      "confirmed"
+      transactionId
     );
   }
 
-  function deleteEvent(eventId: string) {
-    setEvents((currentEvents) =>
-      currentEvents.filter(
-        (event) => event.id !== eventId
-      )
+  async function rejectSettlement(
+    eventId: string,
+    transactionId: string
+  ) {
+    await runTransactionAction(
+      "reject_settlement",
+      eventId,
+      transactionId
     );
+  }
+
+  async function deleteEvent(
+    eventId: string
+  ) {
+    const { error } =
+      await supabase
+        .from("events")
+        .delete()
+        .eq(
+          "id",
+          eventId
+        );
+
+    if (error) {
+      console.error(
+        "Failed to delete event:",
+        error.message
+      );
+
+      return;
+    }
+
+    await refreshEvents();
   }
 
   return (
     <EventContext.Provider
       value={{
         events,
-        currentUser,
-        setCurrentUser,
+        loading,
+        refreshing,
+        refreshEvents,
+
         createEvent,
         addMember,
         createTransaction,
+
         confirmTransaction,
         rejectTransaction,
+
         markTransactionPaid,
         confirmSettlement,
         rejectSettlement,
+
         deleteEvent,
       }}
     >
@@ -299,7 +773,8 @@ export function EventProvider({
 }
 
 export function useEvents() {
-  const context = useContext(EventContext);
+  const context =
+    useContext(EventContext);
 
   if (!context) {
     throw new Error(
