@@ -1,8 +1,12 @@
 import {
   router,
+  useFocusEffect,
   useLocalSearchParams,
 } from "expo-router";
-import { useState } from "react";
+import {
+  useCallback,
+  useState,
+} from "react";
 import {
   Alert,
   Pressable,
@@ -13,16 +17,24 @@ import {
   View,
 } from "react-native";
 
+import { useAuth } from "../../../context/AuthContext";
 import { useEvents } from "../../../context/EventContext";
 
 export default function EventDetailsScreen() {
   const { id } =
-    useLocalSearchParams<{ id: string }>();
+    useLocalSearchParams<{
+      id: string;
+    }>();
+
+  const {
+    session,
+    profile,
+  } = useAuth();
 
   const {
     events,
-    currentUser,
-    setCurrentUser,
+    refreshing,
+    refreshEvents,
     addMember,
     confirmTransaction,
     rejectTransaction,
@@ -32,14 +44,39 @@ export default function EventDetailsScreen() {
     deleteEvent,
   } = useEvents();
 
-  const [memberName, setMemberName] =
-    useState("");
+  const [
+    memberName,
+    setMemberName,
+  ] = useState("");
 
-  const event = events.find(
-    (item) => item.id === id
+  const [
+    memberError,
+    setMemberError,
+  ] = useState("");
+
+  const [
+    addingMember,
+    setAddingMember,
+  ] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshEvents();
+
+      return undefined;
+    }, [refreshEvents])
   );
 
-  function handleAddMember() {
+  const event =
+    events.find(
+      (item) => item.id === id
+    );
+
+  async function handleRefresh() {
+    await refreshEvents(true);
+  }
+
+  async function handleAddMember() {
     if (!event) {
       return;
     }
@@ -51,10 +88,21 @@ export default function EventDetailsScreen() {
       return;
     }
 
-    addMember(
-      event.id,
-      trimmedName
-    );
+    setAddingMember(true);
+    setMemberError("");
+
+    const error =
+      await addMember(
+        event.id,
+        trimmedName
+      );
+
+    setAddingMember(false);
+
+    if (error) {
+      setMemberError(error);
+      return;
+    }
 
     setMemberName("");
   }
@@ -75,8 +123,12 @@ export default function EventDetailsScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            deleteEvent(event.id);
+
+          onPress: async () => {
+            await deleteEvent(
+              event.id
+            );
+
             router.replace("/");
           },
         },
@@ -86,24 +138,39 @@ export default function EventDetailsScreen() {
 
   if (!event) {
     return (
-      <View style={styles.container}>
-        <Text>
+      <View
+        style={styles.container}
+      >
+        <Text
+          style={
+            styles.notFoundText
+          }
+        >
           Event not found.
         </Text>
       </View>
     );
   }
 
+  const currentUserId =
+    session?.user.id ?? "";
+
+  const isCreator =
+    event.createdBy ===
+    currentUserId;
+
   const pendingTransactions =
     event.transactions.filter(
       (transaction) =>
-        transaction.status === "pending"
+        transaction.status ===
+        "pending"
     );
 
   const activeTransactions =
     event.transactions.filter(
       (transaction) =>
-        transaction.status === "confirmed" ||
+        transaction.status ===
+          "confirmed" ||
         transaction.status ===
           "payment_pending"
     );
@@ -111,17 +178,35 @@ export default function EventDetailsScreen() {
   const settledTransactions =
     event.transactions.filter(
       (transaction) =>
-        transaction.status === "settled"
+        transaction.status ===
+        "settled"
     );
 
-  function formatDate(dateString: string) {
+  function formatDate(
+    dateString: string
+  ) {
     return new Date(
       dateString
-    ).toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    ).toLocaleDateString(
+      "en-GB",
+      {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  }
+
+  function getMemberName(
+    memberId: string
+  ) {
+    return (
+      event.members.find(
+        (member) =>
+          member.id === memberId
+      )?.displayName ??
+      "Unknown"
+    );
   }
 
   function calculatePairBalances() {
@@ -133,15 +218,15 @@ export default function EventDetailsScreen() {
     activeTransactions.forEach(
       (transaction) => {
         const pair = [
-          transaction.debtor,
-          transaction.creditor,
+          transaction.debtorId,
+          transaction.creditorId,
         ]
           .sort()
           .join("|");
 
         const direction =
-          transaction.debtor <
-          transaction.creditor
+          transaction.debtorId <
+          transaction.creditorId
             ? 1
             : -1;
 
@@ -158,111 +243,186 @@ export default function EventDetailsScreen() {
   const balances =
     calculatePairBalances();
 
+  const outstandingBalances =
+    Object.entries(
+      balances
+    ).filter(
+      ([, balance]) =>
+        balance !== 0
+    );
+
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={
+          styles.content
+        }
       >
-        <Text style={styles.title}>
-          {event.name}
-        </Text>
+        <View
+          style={styles.titleRow}
+        >
+          <View
+            style={
+              styles.titleContainer
+            }
+          >
+            <Text
+              style={styles.title}
+            >
+              {event.name}
+            </Text>
 
-        {event.description ? (
-          <Text style={styles.description}>
-            {event.description}
-          </Text>
-        ) : null}
-
-        <Text style={styles.sectionTitle}>
-          Testing As
-        </Text>
-
-        <View style={styles.userSwitcher}>
-          {event.members.map(
-            (member, index) => (
-              <Pressable
-                key={`${member}-${index}`}
-                style={[
-                  styles.userButton,
-                  currentUser === member &&
-                    styles.userButtonSelected,
-                ]}
-                onPress={() =>
-                  setCurrentUser(member)
+            {event.description ? (
+              <Text
+                style={
+                  styles.description
                 }
               >
-                <Text
-                  style={[
-                    styles.userButtonText,
-                    currentUser === member &&
-                      styles.userButtonTextSelected,
-                  ]}
-                >
-                  {member}
-                </Text>
-              </Pressable>
-            )
-          )}
+                {event.description}
+              </Text>
+            ) : null}
+          </View>
+
+          <Pressable
+            style={
+              styles.refreshButton
+            }
+            onPress={
+              handleRefresh
+            }
+            disabled={refreshing}
+          >
+            <Text
+              style={
+                styles.refreshButtonText
+              }
+            >
+              {refreshing
+                ? "Refreshing..."
+                : "Refresh"}
+            </Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.currentUserText}>
-          You are testing as {currentUser}
+        <Text
+          style={
+            styles.signedInText
+          }
+        >
+          Signed in as{" "}
+          {profile?.display_name}
         </Text>
 
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
           Members
         </Text>
 
         {event.members.map(
-          (member, index) => (
+          (member) => (
             <View
-              key={`${member}-${index}`}
-              style={styles.memberCard}
+              key={member.id}
+              style={
+                styles.memberCard
+              }
             >
-              <Text style={styles.memberName}>
-                {member}
+              <Text
+                style={
+                  styles.memberName
+                }
+              >
+                {
+                  member.displayName
+                }
+
+                {member.id ===
+                currentUserId
+                  ? " (You)"
+                  : ""}
               </Text>
             </View>
           )
         )}
 
-        <View style={styles.memberRow}>
-          <TextInput
-            style={styles.memberInput}
-            placeholder="Add another member"
-            placeholderTextColor="#9CA3AF"
-            value={memberName}
-            onChangeText={setMemberName}
-          />
-
-          <Pressable
-            style={styles.addMemberButton}
-            onPress={handleAddMember}
-          >
-            <Text
+        {isCreator ? (
+          <>
+            <View
               style={
-                styles.addMemberButtonText
+                styles.memberRow
               }
             >
-              Add
-            </Text>
-          </Pressable>
-        </View>
+              <TextInput
+                style={
+                  styles.memberInput
+                }
+                placeholder="Registered user's display name"
+                placeholderTextColor="#9CA3AF"
+                value={memberName}
+                onChangeText={
+                  setMemberName
+                }
+              />
 
-        <Text style={styles.sectionTitle}>
+              <Pressable
+                style={
+                  styles.addMemberButton
+                }
+                onPress={
+                  handleAddMember
+                }
+                disabled={
+                  addingMember
+                }
+              >
+                <Text
+                  style={
+                    styles.addMemberButtonText
+                  }
+                >
+                  {addingMember
+                    ? "..."
+                    : "Add"}
+                </Text>
+              </Pressable>
+            </View>
+
+            {memberError ? (
+              <Text
+                style={
+                  styles.errorText
+                }
+              >
+                {memberError}
+              </Text>
+            ) : null}
+          </>
+        ) : null}
+
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
           Pending
         </Text>
 
         {pendingTransactions.length ===
         0 ? (
-          <Text style={styles.emptyText}>
+          <Text
+            style={styles.emptyText}
+          >
             No pending transactions.
           </Text>
         ) : (
           pendingTransactions.map(
             (transaction) => (
               <View
-                key={transaction.id}
+                key={
+                  transaction.id
+                }
                 style={
                   styles.transactionCard
                 }
@@ -272,8 +432,14 @@ export default function EventDetailsScreen() {
                     styles.transactionSummary
                   }
                 >
-                  {transaction.debtor} owes{" "}
-                  {transaction.creditor} £
+                  {
+                    transaction.debtorName
+                  }{" "}
+                  owes{" "}
+                  {
+                    transaction.creditorName
+                  }{" "}
+                  £
                   {(
                     transaction.amountInPence /
                     100
@@ -285,7 +451,9 @@ export default function EventDetailsScreen() {
                     styles.transactionDescription
                   }
                 >
-                  {transaction.description}
+                  {
+                    transaction.description
+                  }
                 </Text>
 
                 <Text
@@ -298,8 +466,8 @@ export default function EventDetailsScreen() {
                   )}
                 </Text>
 
-                {currentUser ===
-                transaction.creditor ? (
+                {currentUserId ===
+                transaction.creditorId ? (
                   <View
                     style={
                       styles.actionRow
@@ -347,10 +515,14 @@ export default function EventDetailsScreen() {
                   </View>
                 ) : (
                   <Text
-                    style={styles.statusText}
+                    style={
+                      styles.statusText
+                    }
                   >
                     Waiting for{" "}
-                    {transaction.creditor}
+                    {
+                      transaction.creditorName
+                    }
                   </Text>
                 )}
               </View>
@@ -358,20 +530,29 @@ export default function EventDetailsScreen() {
           )
         )}
 
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
           Transactions
         </Text>
 
         {activeTransactions.length ===
         0 ? (
-          <Text style={styles.emptyText}>
-            No confirmed transactions yet.
+          <Text
+            style={styles.emptyText}
+          >
+            No confirmed transactions
+            yet.
           </Text>
         ) : (
           activeTransactions.map(
             (transaction) => (
               <View
-                key={transaction.id}
+                key={
+                  transaction.id
+                }
                 style={
                   styles.transactionCard
                 }
@@ -381,8 +562,14 @@ export default function EventDetailsScreen() {
                     styles.transactionSummary
                   }
                 >
-                  {transaction.debtor} owes{" "}
-                  {transaction.creditor} £
+                  {
+                    transaction.debtorName
+                  }{" "}
+                  owes{" "}
+                  {
+                    transaction.creditorName
+                  }{" "}
+                  £
                   {(
                     transaction.amountInPence /
                     100
@@ -394,7 +581,9 @@ export default function EventDetailsScreen() {
                     styles.transactionDescription
                   }
                 >
-                  {transaction.description}
+                  {
+                    transaction.description
+                  }
                 </Text>
 
                 <Text
@@ -409,8 +598,8 @@ export default function EventDetailsScreen() {
 
                 {transaction.status ===
                   "confirmed" &&
-                currentUser ===
-                  transaction.debtor ? (
+                currentUserId ===
+                  transaction.debtorId ? (
                   <Pressable
                     style={
                       styles.markPaidButton
@@ -434,33 +623,42 @@ export default function EventDetailsScreen() {
 
                 {transaction.status ===
                   "payment_pending" &&
-                currentUser ===
-                  transaction.debtor ? (
+                currentUserId ===
+                  transaction.debtorId ? (
                   <Text
-                    style={styles.statusText}
+                    style={
+                      styles.statusText
+                    }
                   >
                     Waiting for{" "}
-                    {transaction.creditor} to
-                    confirm payment
+                    {
+                      transaction.creditorName
+                    }{" "}
+                    to confirm payment
                   </Text>
                 ) : null}
 
                 {transaction.status ===
                   "payment_pending" &&
-                currentUser ===
-                  transaction.creditor ? (
+                currentUserId ===
+                  transaction.creditorId ? (
                   <>
                     <Text
                       style={
                         styles.paymentNotice
                       }
                     >
-                      {transaction.debtor} says
-                      this has been paid.
+                      {
+                        transaction.debtorName
+                      }{" "}
+                      says this has been
+                      paid.
                     </Text>
 
                     <View
-                      style={styles.actionRow}
+                      style={
+                        styles.actionRow
+                      }
                     >
                       <Pressable
                         style={
@@ -509,46 +707,58 @@ export default function EventDetailsScreen() {
           )
         )}
 
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
           Net Balance
         </Text>
 
-        {Object.entries(balances).filter(
-          ([, balance]) => balance !== 0
-        ).length === 0 ? (
-          <Text style={styles.emptyText}>
+        {outstandingBalances.length ===
+        0 ? (
+          <Text
+            style={styles.emptyText}
+          >
             No outstanding balance.
           </Text>
         ) : (
-          Object.entries(balances).map(
+          outstandingBalances.map(
             ([pair, balance]) => {
-              if (balance === 0) {
-                return null;
-              }
-
               const [
-                firstMember,
-                secondMember,
+                firstId,
+                secondId,
               ] = pair.split("|");
 
-              const debtor =
+              const debtorId =
                 balance > 0
-                  ? firstMember
-                  : secondMember;
+                  ? firstId
+                  : secondId;
 
-              const creditor =
+              const creditorId =
                 balance > 0
-                  ? secondMember
-                  : firstMember;
+                  ? secondId
+                  : firstId;
 
               return (
                 <Text
                   key={pair}
-                  style={styles.balanceText}
+                  style={
+                    styles.balanceText
+                  }
                 >
-                  {debtor} owes {creditor} £
+                  {getMemberName(
+                    debtorId
+                  )}{" "}
+                  owes{" "}
+                  {getMemberName(
+                    creditorId
+                  )}{" "}
+                  £
                   {(
-                    Math.abs(balance) / 100
+                    Math.abs(
+                      balance
+                    ) / 100
                   ).toFixed(2)}
                 </Text>
               );
@@ -556,20 +766,29 @@ export default function EventDetailsScreen() {
           )
         )}
 
-        <Text style={styles.sectionTitle}>
+        <Text
+          style={
+            styles.sectionTitle
+          }
+        >
           Settled
         </Text>
 
         {settledTransactions.length ===
         0 ? (
-          <Text style={styles.emptyText}>
-            No settled transactions yet.
+          <Text
+            style={styles.emptyText}
+          >
+            No settled transactions
+            yet.
           </Text>
         ) : (
           settledTransactions.map(
             (transaction) => (
               <View
-                key={transaction.id}
+                key={
+                  transaction.id
+                }
                 style={
                   styles.settledCard
                 }
@@ -579,8 +798,14 @@ export default function EventDetailsScreen() {
                     styles.transactionSummary
                   }
                 >
-                  {transaction.debtor} paid{" "}
-                  {transaction.creditor} £
+                  {
+                    transaction.debtorName
+                  }{" "}
+                  paid{" "}
+                  {
+                    transaction.creditorName
+                  }{" "}
+                  £
                   {(
                     transaction.amountInPence /
                     100
@@ -592,7 +817,9 @@ export default function EventDetailsScreen() {
                     styles.transactionDescription
                   }
                 >
-                  {transaction.description}
+                  {
+                    transaction.description
+                  }
                 </Text>
 
                 <Text
@@ -605,7 +832,11 @@ export default function EventDetailsScreen() {
                   )}
                 </Text>
 
-                <Text style={styles.settledText}>
+                <Text
+                  style={
+                    styles.settledText
+                  }
+                >
                   Settled
                 </Text>
               </View>
@@ -613,293 +844,315 @@ export default function EventDetailsScreen() {
           )
         )}
 
-        <Pressable
-          style={
-            styles.transactionButton
-          }
-          onPress={() =>
-            router.push({
-              pathname:
-                "/events/[id]/add-transaction",
-              params: {
-                id: event.id,
-              },
-            })
-          }
-        >
-          <Text
+        {event.members.length >= 2 ? (
+          <Pressable
             style={
-              styles.transactionButtonText
+              styles.transactionButton
+            }
+            onPress={() =>
+              router.push({
+                pathname:
+                  "/events/[id]/add-transaction",
+
+                params: {
+                  id: event.id,
+                },
+              })
             }
           >
-            + Add Transaction
-          </Text>
-        </Pressable>
+            <Text
+              style={
+                styles.transactionButtonText
+              }
+            >
+              + Add Transaction
+            </Text>
+          </Pressable>
+        ) : null}
 
-        <Pressable
-          style={styles.deleteButton}
-          onPress={handleDeleteEvent}
-        >
-          <Text
-            style={styles.deleteButtonText}
+        {isCreator ? (
+          <Pressable
+            style={
+              styles.deleteButton
+            }
+            onPress={
+              handleDeleteEvent
+            }
           >
-            Delete Event
-          </Text>
-        </Pressable>
+            <Text
+              style={
+                styles.deleteButtonText
+              }
+            >
+              Delete Event
+            </Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "white",
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "white",
+    },
 
-  content: {
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    paddingBottom: 50,
-  },
+    content: {
+      paddingHorizontal: 24,
+      paddingTop: 32,
+      paddingBottom: 50,
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#111827",
-  },
+    titleRow: {
+      flexDirection: "row",
+      justifyContent:
+        "space-between",
+      alignItems: "flex-start",
+      gap: 16,
+    },
 
-  description: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginTop: 10,
-    lineHeight: 23,
-  },
+    titleContainer: {
+      flex: 1,
+    },
 
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#111827",
-    marginTop: 32,
-    marginBottom: 12,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "700",
+      color: "#111827",
+    },
 
-  userSwitcher: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
+    description: {
+      fontSize: 16,
+      color: "#6B7280",
+      marginTop: 10,
+      lineHeight: 23,
+    },
 
-  userButton: {
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
+    refreshButton: {
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 10,
+      paddingHorizontal: 13,
+      paddingVertical: 8,
+      backgroundColor: "#F9FAFB",
+    },
 
-  userButtonSelected: {
-    backgroundColor: "#111827",
-    borderColor: "#111827",
-  },
+    refreshButtonText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: "#374151",
+    },
 
-  userButtonText: {
-    color: "#374151",
-    fontWeight: "600",
-  },
+    signedInText: {
+      fontSize: 14,
+      color: "#6B7280",
+      marginTop: 14,
+    },
 
-  userButtonTextSelected: {
-    color: "white",
-  },
+    sectionTitle: {
+      fontSize: 20,
+      fontWeight: "700",
+      color: "#111827",
+      marginTop: 32,
+      marginBottom: 12,
+    },
 
-  currentUserText: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 10,
-  },
+    emptyText: {
+      fontSize: 15,
+      color: "#9CA3AF",
+    },
 
-  emptyText: {
-    fontSize: 15,
-    color: "#9CA3AF",
-  },
+    errorText: {
+      color: "#DC2626",
+      fontSize: 14,
+      marginTop: 8,
+    },
 
-  memberCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
+    memberCard: {
+      backgroundColor: "#F9FAFB",
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 8,
+    },
 
-  memberName: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#111827",
-  },
+    memberName: {
+      fontSize: 16,
+      fontWeight: "500",
+      color: "#111827",
+    },
 
-  memberRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 16,
-  },
+    memberRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 16,
+    },
 
-  memberInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 14,
-  },
+    memberInput: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      padding: 14,
+    },
 
-  addMemberButton: {
-    backgroundColor: "#111827",
-    paddingHorizontal: 20,
-    justifyContent: "center",
-    borderRadius: 12,
-  },
+    addMemberButton: {
+      backgroundColor: "#111827",
+      paddingHorizontal: 20,
+      justifyContent: "center",
+      borderRadius: 12,
+    },
 
-  addMemberButtonText: {
-    color: "white",
-    fontWeight: "600",
-  },
+    addMemberButtonText: {
+      color: "white",
+      fontWeight: "600",
+    },
 
-  transactionCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-  },
+    transactionCard: {
+      backgroundColor: "#F9FAFB",
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 10,
+    },
 
-  settledCard: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
-    opacity: 0.75,
-  },
+    settledCard: {
+      backgroundColor: "#F9FAFB",
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 10,
+      opacity: 0.75,
+    },
 
-  transactionSummary: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#111827",
-  },
+    transactionSummary: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: "#111827",
+    },
 
-  transactionDescription: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginTop: 6,
-  },
+    transactionDescription: {
+      fontSize: 14,
+      color: "#6B7280",
+      marginTop: 6,
+    },
 
-  transactionDate: {
-    fontSize: 13,
-    color: "#9CA3AF",
-    marginTop: 4,
-  },
+    transactionDate: {
+      fontSize: 13,
+      color: "#9CA3AF",
+      marginTop: 4,
+    },
 
-  statusText: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginTop: 12,
-  },
+    statusText: {
+      fontSize: 13,
+      color: "#6B7280",
+      marginTop: 12,
+    },
 
-  paymentNotice: {
-    fontSize: 14,
-    color: "#374151",
-    fontWeight: "600",
-    marginTop: 12,
-  },
+    paymentNotice: {
+      fontSize: 14,
+      color: "#374151",
+      fontWeight: "600",
+      marginTop: 12,
+    },
 
-  settledText: {
-    fontSize: 13,
-    color: "#6B7280",
-    fontWeight: "600",
-    marginTop: 10,
-  },
+    settledText: {
+      fontSize: 13,
+      color: "#6B7280",
+      fontWeight: "600",
+      marginTop: 10,
+    },
 
-  actionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 14,
-  },
+    actionRow: {
+      flexDirection: "row",
+      gap: 10,
+      marginTop: 14,
+    },
 
-  primaryButton: {
-    flex: 1,
-    backgroundColor: "#111827",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-  },
+    primaryButton: {
+      flex: 1,
+      backgroundColor: "#111827",
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+    },
 
-  primaryButtonText: {
-    color: "white",
-    fontWeight: "600",
-  },
+    primaryButtonText: {
+      color: "white",
+      fontWeight: "600",
+    },
 
-  rejectButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#DC2626",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-  },
+    rejectButton: {
+      flex: 1,
+      borderWidth: 1,
+      borderColor: "#DC2626",
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+    },
 
-  rejectButtonText: {
-    color: "#DC2626",
-    fontWeight: "600",
-  },
+    rejectButtonText: {
+      color: "#DC2626",
+      fontWeight: "600",
+    },
 
-  markPaidButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 14,
-  },
+    markPaidButton: {
+      backgroundColor: "#111827",
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center",
+      marginTop: 14,
+    },
 
-  markPaidButtonText: {
-    color: "white",
-    fontWeight: "600",
-  },
+    markPaidButtonText: {
+      color: "white",
+      fontWeight: "600",
+    },
 
-  balanceText: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 8,
-  },
+    balanceText: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: "#111827",
+      marginBottom: 8,
+    },
 
-  transactionButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 24,
-  },
+    transactionButton: {
+      backgroundColor: "#111827",
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      marginTop: 24,
+    },
 
-  transactionButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+    transactionButtonText: {
+      color: "white",
+      fontSize: 16,
+      fontWeight: "600",
+    },
 
-  deleteButton: {
-    marginTop: 40,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#DC2626",
-    alignItems: "center",
-  },
+    deleteButton: {
+      marginTop: 40,
+      paddingVertical: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: "#DC2626",
+      alignItems: "center",
+    },
 
-  deleteButtonText: {
-    color: "#DC2626",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+    deleteButtonText: {
+      color: "#DC2626",
+      fontSize: 16,
+      fontWeight: "600",
+    },
+
+    notFoundText: {
+      fontSize: 16,
+      color: "#6B7280",
+    },
+  });

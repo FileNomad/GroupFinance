@@ -12,111 +12,183 @@ import {
   View,
 } from "react-native";
 
+import { useAuth } from "../../../context/AuthContext";
 import { useEvents } from "../../../context/EventContext";
 
 export default function AddTransactionScreen() {
   const { id } =
-    useLocalSearchParams<{ id: string }>();
+    useLocalSearchParams<{
+      id: string;
+    }>();
+
+  const {
+    session,
+    profile,
+  } = useAuth();
 
   const {
     events,
-    currentUser,
     createTransaction,
   } = useEvents();
 
-  const event = events.find(
-    (item) => item.id === id
-  );
+  const event =
+    events.find(
+      (item) => item.id === id
+    );
 
-  const [creditor, setCreditor] = useState("");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] =
+  const [
+    creditorId,
+    setCreditorId,
+  ] = useState("");
+
+  const [amount, setAmount] =
     useState("");
 
-  function handleSubmit() {
-    if (!event) {
+  const [
+    description,
+    setDescription,
+  ] = useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  async function handleSubmit() {
+    if (
+      !event ||
+      !session ||
+      !creditorId
+    ) {
       return;
     }
 
-    const numericAmount = Number(amount);
+    const numericAmount =
+      Number(amount);
 
     if (
-      !creditor ||
-      creditor === currentUser ||
       numericAmount <= 0 ||
       !description.trim()
     ) {
       return;
     }
 
-    createTransaction(
-      event.id,
-      creditor,
-      Math.round(numericAmount * 100),
-      description.trim()
-    );
+    setLoading(true);
+    setError("");
+
+    const transactionError =
+      await createTransaction(
+        event.id,
+        creditorId,
+        Math.round(
+          numericAmount * 100
+        ),
+        description.trim()
+      );
+
+    setLoading(false);
+
+    if (transactionError) {
+      setError(
+        transactionError
+      );
+
+      return;
+    }
 
     router.back();
   }
 
   if (!event) {
     return (
-      <View style={styles.container}>
-        <Text>Event not found.</Text>
+      <View
+        style={styles.container}
+      >
+        <Text
+          style={
+            styles.notFoundText
+          }
+        >
+          Event not found.
+        </Text>
       </View>
     );
   }
 
   const availableCreditors =
     event.members.filter(
-      (member) => member !== currentUser
+      (member) =>
+        member.id !==
+        session?.user.id
     );
 
   const canSubmit =
-    creditor !== "" &&
+    creditorId !== "" &&
     Number(amount) > 0 &&
-    description.trim() !== "";
+    description.trim() !== "" &&
+    !loading;
 
   return (
     <View style={styles.container}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={
+          styles.content
+        }
       >
         <Text style={styles.title}>
           Add Transaction
         </Text>
 
         <Text style={styles.intro}>
-          {currentUser} owes...
+          You are{" "}
+          {profile?.display_name}
         </Text>
 
         <Text style={styles.label}>
           Who do you owe?
         </Text>
 
-        {availableCreditors.map(
-          (member, index) => (
-            <Pressable
-              key={`${member}-${index}`}
-              style={[
-                styles.memberOption,
-                creditor === member &&
-                  styles.memberOptionSelected,
-              ]}
-              onPress={() =>
-                setCreditor(member)
-              }
-            >
-              <Text
+        {availableCreditors.length ===
+        0 ? (
+          <Text
+            style={styles.emptyText}
+          >
+            Add another registered
+            member before creating a
+            transaction.
+          </Text>
+        ) : (
+          availableCreditors.map(
+            (member) => (
+              <Pressable
+                key={member.id}
                 style={[
-                  styles.memberOptionText,
-                  creditor === member &&
-                    styles.memberOptionTextSelected,
+                  styles.memberOption,
+                  creditorId ===
+                    member.id &&
+                    styles.memberOptionSelected,
                 ]}
+                onPress={() =>
+                  setCreditorId(
+                    member.id
+                  )
+                }
               >
-                {member}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.memberOptionText,
+                    creditorId ===
+                      member.id &&
+                      styles.memberOptionTextSelected,
+                  ]}
+                >
+                  {
+                    member.displayName
+                  }
+                </Text>
+              </Pressable>
+            )
           )
         )}
 
@@ -124,8 +196,16 @@ export default function AddTransactionScreen() {
           Amount
         </Text>
 
-        <View style={styles.amountContainer}>
-          <Text style={styles.currencySymbol}>
+        <View
+          style={
+            styles.amountContainer
+          }
+        >
+          <Text
+            style={
+              styles.currencySymbol
+            }
+          >
             £
           </Text>
 
@@ -144,13 +224,25 @@ export default function AddTransactionScreen() {
         </Text>
 
         <TextInput
-          style={styles.descriptionInput}
+          style={
+            styles.descriptionInput
+          }
           placeholder="e.g. Taxi from airport"
           placeholderTextColor="#9CA3AF"
           value={description}
-          onChangeText={setDescription}
+          onChangeText={
+            setDescription
+          }
           maxLength={100}
         />
+
+        {error ? (
+          <Text
+            style={styles.errorText}
+          >
+            {error}
+          </Text>
+        ) : null}
 
         <Pressable
           style={[
@@ -159,9 +251,16 @@ export default function AddTransactionScreen() {
               styles.submitButtonDisabled,
           ]}
           onPress={handleSubmit}
+          disabled={!canSubmit}
         >
-          <Text style={styles.submitButtonText}>
-            Send for Confirmation
+          <Text
+            style={
+              styles.submitButtonText
+            }
+          >
+            {loading
+              ? "Sending..."
+              : "Send for Confirmation"}
           </Text>
         </Pressable>
       </ScrollView>
@@ -169,107 +268,124 @@ export default function AddTransactionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "white",
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: "white",
+    },
 
-  content: {
-    padding: 24,
-    paddingBottom: 50,
-  },
+    content: {
+      padding: 24,
+      paddingBottom: 50,
+    },
 
-  title: {
-    fontSize: 30,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 10,
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "700",
+      color: "#111827",
+      marginBottom: 8,
+    },
 
-  intro: {
-    fontSize: 17,
-    color: "#6B7280",
-    marginBottom: 22,
-  },
+    intro: {
+      fontSize: 15,
+      color: "#6B7280",
+      marginBottom: 22,
+    },
 
-  label: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#374151",
-    marginTop: 18,
-    marginBottom: 8,
-  },
+    label: {
+      fontSize: 15,
+      fontWeight: "600",
+      color: "#374151",
+      marginTop: 18,
+      marginBottom: 8,
+    },
 
-  memberOption: {
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
+    emptyText: {
+      fontSize: 15,
+      color: "#9CA3AF",
+    },
 
-  memberOptionSelected: {
-    borderColor: "#111827",
-    backgroundColor: "#F3F4F6",
-  },
+    memberOption: {
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 8,
+    },
 
-  memberOptionText: {
-    fontSize: 16,
-    color: "#374151",
-  },
+    memberOptionSelected: {
+      borderColor: "#111827",
+      backgroundColor: "#F3F4F6",
+    },
 
-  memberOptionTextSelected: {
-    color: "#111827",
-    fontWeight: "600",
-  },
+    memberOptionText: {
+      fontSize: 16,
+      color: "#374151",
+    },
 
-  amountContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-  },
+    memberOptionTextSelected: {
+      color: "#111827",
+      fontWeight: "600",
+    },
 
-  currencySymbol: {
-    fontSize: 20,
-    color: "#111827",
-    marginRight: 6,
-  },
+    amountContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      paddingHorizontal: 14,
+    },
 
-  amountInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 20,
-    color: "#111827",
-  },
+    currencySymbol: {
+      fontSize: 20,
+      color: "#111827",
+      marginRight: 6,
+    },
 
-  descriptionInput: {
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: "#111827",
-  },
+    amountInput: {
+      flex: 1,
+      paddingVertical: 14,
+      fontSize: 20,
+      color: "#111827",
+    },
 
-  submitButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 30,
-  },
+    descriptionInput: {
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      padding: 14,
+      fontSize: 16,
+      color: "#111827",
+    },
 
-  submitButtonDisabled: {
-    opacity: 0.4,
-  },
+    errorText: {
+      color: "#DC2626",
+      fontSize: 14,
+      marginTop: 16,
+    },
 
-  submitButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+    submitButton: {
+      backgroundColor: "#111827",
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: "center",
+      marginTop: 30,
+    },
+
+    submitButtonDisabled: {
+      opacity: 0.4,
+    },
+
+    submitButtonText: {
+      color: "white",
+      fontSize: 16,
+      fontWeight: "600",
+    },
+
+    notFoundText: {
+      fontSize: 16,
+      color: "#6B7280",
+    },
+  });

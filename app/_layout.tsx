@@ -1,44 +1,122 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import {
+  DarkTheme,
+  DefaultTheme,
+  ThemeProvider,
+} from "@react-navigation/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+} from "react-native";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import {
+  AuthProvider,
+  useAuth,
+} from "../context/AuthContext";
 import { EventProvider } from "../context/EventContext";
 
-export default function RootLayout() {
+function AppNavigator() {
+  const {
+    session,
+    profile,
+    loading,
+  } = useAuth();
+
   const colorScheme = useColorScheme();
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
-    <EventProvider>
-      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
-        <Stack>
+    <ThemeProvider
+      value={
+        colorScheme === "dark"
+          ? DarkTheme
+          : DefaultTheme
+      }
+    >
+      <Stack>
+        <Stack.Protected guard={!session}>
+          <Stack.Screen
+            name="login"
+            options={{
+              headerShown: false,
+            }}
+          />
+        </Stack.Protected>
+
+        <Stack.Protected
+          guard={!!session && !profile}
+        >
+          <Stack.Screen
+            name="create-profile"
+            options={{
+              headerShown: false,
+            }}
+          />
+        </Stack.Protected>
+
+        <Stack.Protected
+          guard={!!session && !!profile}
+        >
           <Stack.Screen
             name="index"
-            options={{ headerShown: false }}
+            options={{
+              headerShown: false,
+            }}
           />
 
           <Stack.Screen
             name="create-event"
-            options={{ title: "Create Event" }}
-          />
-
-          <Stack.Screen
-            name="events/[id]"
-            options={{ title: "Event" }}
-          />
-
-          <Stack.Screen
-            name="modal"
             options={{
-              presentation: "modal",
-              title: "Modal",
+              title: "Create Event",
             }}
           />
-        </Stack>
 
-        <StatusBar style="auto" />
-      </ThemeProvider>
-    </EventProvider>
+          <Stack.Screen
+            name="events/[id]/index"
+            options={{
+              title: "Event",
+            }}
+          />
+
+          <Stack.Screen
+            name="events/[id]/add-transaction"
+            options={{
+              title: "Add Transaction",
+            }}
+          />
+        </Stack.Protected>
+      </Stack>
+
+      <StatusBar style="auto" />
+    </ThemeProvider>
   );
 }
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <EventProvider>
+        <AppNavigator />
+      </EventProvider>
+    </AuthProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+});
