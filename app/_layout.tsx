@@ -26,12 +26,17 @@ function AppNavigator() {
     loading,
   } = useAuth();
 
-  const colorScheme = useColorScheme();
+  const colorScheme =
+    useColorScheme();
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" />
+      <View
+        style={styles.loadingContainer}
+      >
+        <ActivityIndicator
+          size="large"
+        />
       </View>
     );
   }
@@ -45,9 +50,18 @@ function AppNavigator() {
       }
     >
       <Stack>
-        <Stack.Protected guard={!session}>
+        <Stack.Protected
+          guard={!session}
+        >
           <Stack.Screen
             name="login"
+            options={{
+              headerShown: false,
+            }}
+          />
+
+          <Stack.Screen
+            name="email-confirmed"
             options={{
               headerShown: false,
             }}
@@ -55,7 +69,10 @@ function AppNavigator() {
         </Stack.Protected>
 
         <Stack.Protected
-          guard={!!session && !profile}
+          guard={
+            !!session &&
+            !profile
+          }
         >
           <Stack.Screen
             name="create-profile"
@@ -66,7 +83,10 @@ function AppNavigator() {
         </Stack.Protected>
 
         <Stack.Protected
-          guard={!!session && !!profile}
+          guard={
+            !!session &&
+            !!profile
+          }
         >
           <Stack.Screen
             name="index"
@@ -76,9 +96,17 @@ function AppNavigator() {
           />
 
           <Stack.Screen
+            name="account"
+            options={{
+              title: "Account",
+            }}
+          />
+
+          <Stack.Screen
             name="create-event"
             options={{
-              title: "Create Event",
+              title:
+                "Create Event",
             }}
           />
 
@@ -92,13 +120,16 @@ function AppNavigator() {
           <Stack.Screen
             name="events/[id]/add-transaction"
             options={{
-              title: "Add Transaction",
+              title:
+                "Add Transaction",
             }}
           />
         </Stack.Protected>
       </Stack>
 
-      <StatusBar style="auto" />
+      <StatusBar
+        style="auto"
+      />
     </ThemeProvider>
   );
 }
@@ -113,10 +144,12 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const styles =
+  StyleSheet.create({
+    loadingContainer: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent:
+        "center",
+    },
+  });

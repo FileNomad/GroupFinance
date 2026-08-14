@@ -66,17 +66,41 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          <Pressable
-            onPress={handleSignOut}
+          <View
+            style={
+              styles.accountActions
+            }
           >
-            <Text
-              style={
-                styles.signOutText
+            <Pressable
+              onPress={() =>
+                router.push(
+                  "/account"
+                )
               }
             >
-              Sign Out
-            </Text>
-          </Pressable>
+              <Text
+                style={
+                  styles.accountText
+                }
+              >
+                Account
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={
+                handleSignOut
+              }
+            >
+              <Text
+                style={
+                  styles.signOutText
+                }
+              >
+                Sign Out
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {profile ? (
@@ -153,7 +177,9 @@ export default function HomeScreen() {
           </View>
         ) : events.length === 0 ? (
           <Text
-            style={styles.emptyText}
+            style={
+              styles.emptyText
+            }
           >
             You haven't created or
             joined any events yet.
@@ -169,7 +195,6 @@ export default function HomeScreen() {
                 router.push({
                   pathname:
                     "/events/[id]",
-
                   params: {
                     id: event.id,
                   },
@@ -221,7 +246,8 @@ const styles =
   StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: "#F9FAFB",
+      backgroundColor:
+        "#F9FAFB",
     },
 
     content: {
@@ -234,7 +260,8 @@ const styles =
       flexDirection: "row",
       justifyContent:
         "space-between",
-      alignItems: "flex-start",
+      alignItems:
+        "flex-start",
       gap: 20,
     },
 
@@ -252,6 +279,18 @@ const styles =
       fontSize: 16,
       color: "#6B7280",
       marginTop: 6,
+    },
+
+    accountActions: {
+      alignItems:
+        "flex-end",
+      gap: 12,
+    },
+
+    accountText: {
+      color: "#111827",
+      fontSize: 14,
+      fontWeight: "600",
     },
 
     signOutText: {
