@@ -49,17 +49,24 @@ export function AuthProvider({
       return;
     }
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, display_name")
-      .eq("id", currentSession.user.id)
-      .maybeSingle();
+    const { data, error } =
+      await supabase
+        .from("profiles")
+        .select(
+          "id, display_name"
+        )
+        .eq(
+          "id",
+          currentSession.user.id
+        )
+        .maybeSingle();
 
     if (error) {
       console.error(
         "Failed to load profile:",
         error.message
       );
+
       setProfile(null);
       return;
     }
@@ -68,38 +75,147 @@ export function AuthProvider({
   }
 
   async function refreshProfile() {
-    await loadProfile(session);
+    setLoading(true);
+
+    const {
+      data: {
+        session: currentSession,
+      },
+      error,
+    } =
+      await supabase.auth
+        .getSession();
+
+    if (error) {
+      console.error(
+        "Failed to get session:",
+        error.message
+      );
+
+      setLoading(false);
+      return;
+    }
+
+    setSession(currentSession);
+
+    await loadProfile(
+      currentSession
+    );
+
+    setLoading(false);
   }
 
   useEffect(() => {
+    let mounted = true;
+
     async function initialise() {
+      setLoading(true);
+
       const {
-        data: { session: initialSession },
-      } = await supabase.auth.getSession();
+        data: {
+          session:
+            initialSession,
+        },
+        error,
+      } =
+        await supabase.auth
+          .getSession();
 
-      setSession(initialSession);
+      if (!mounted) {
+        return;
+      }
 
-      await loadProfile(initialSession);
+      if (error) {
+        console.error(
+          "Failed to initialise session:",
+          error.message
+        );
 
-      setLoading(false);
+        setSession(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
+      setSession(
+        initialSession
+      );
+
+      await loadProfile(
+        initialSession
+      );
+
+      if (mounted) {
+        setLoading(false);
+      }
     }
 
     initialise();
 
     const {
-      data: { subscription },
+      data: {
+        subscription,
+      },
     } =
-      supabase.auth.onAuthStateChange(
-        async (_event, newSession) => {
-          setSession(newSession);
+      supabase.auth
+        .onAuthStateChange(
+          (
+            _event,
+            newSession
+          ) => {
+            if (!mounted) {
+              return;
+            }
 
-          await loadProfile(newSession);
+            if (!newSession) {
+              setSession(null);
+              setProfile(null);
+              setLoading(false);
+              return;
+            }
 
-          setLoading(false);
-        }
-      );
+            /*
+             * We have authenticated the user,
+             * but we do not yet know whether
+             * they already have a profile.
+             *
+             * Keep the app on the loading
+             * screen until that check finishes.
+             */
+            setLoading(true);
+
+            setSession(
+              newSession
+            );
+
+            setProfile(null);
+
+            /*
+             * Defer Supabase database work
+             * until the auth callback finishes.
+             */
+            setTimeout(
+              async () => {
+                if (!mounted) {
+                  return;
+                }
+
+                await loadProfile(
+                  newSession
+                );
+
+                if (mounted) {
+                  setLoading(false);
+                }
+              },
+              0
+            );
+          }
+        );
 
     return () => {
+      mounted = false;
+
       subscription.unsubscribe();
     };
   }, []);
@@ -119,7 +235,8 @@ export function AuthProvider({
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
+  const context =
+    useContext(AuthContext);
 
   if (!context) {
     throw new Error(

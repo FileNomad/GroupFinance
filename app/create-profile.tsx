@@ -1,148 +1,283 @@
-import { router } from "expo-router";
 import { useState } from "react";
 import {
-    Alert,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from "react-native";
 
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 
 export default function CreateProfileScreen() {
-  const { session } = useAuth();
+  const {
+    session,
+    refreshProfile,
+  } = useAuth();
 
-  const [displayName, setDisplayName] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [
+    displayName,
+    setDisplayName,
+  ] = useState("");
 
-  async function handleCreateProfile() {
-    if (!session || !displayName.trim()) {
-      return;
-    }
+  const [loading, setLoading] =
+    useState(false);
 
-    setLoading(true);
+  const [error, setError] =
+    useState("");
 
-    const { error } = await supabase
-      .from("profiles")
-      .insert({
-        id: session.user.id,
-        display_name: displayName.trim(),
-      });
+  async function handleContinue() {
+    const trimmedName =
+      displayName.trim();
 
-    setLoading(false);
-
-    if (error) {
-      Alert.alert(
-        "Profile creation failed",
-        error.message
+    if (!trimmedName) {
+      setError(
+        "Enter a display name."
       );
       return;
     }
 
-    router.replace("/");
+    if (!session) {
+      setError(
+        "Your session could not be found. Please sign in again."
+      );
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    const {
+      error: profileError,
+    } =
+      await supabase
+        .from("profiles")
+        .upsert(
+          {
+            id:
+              session.user.id,
+
+            display_name:
+              trimmedName,
+
+            is_deleted:
+              false,
+          },
+          {
+            onConflict: "id",
+          }
+        );
+
+    if (profileError) {
+      console.error(
+        "Failed to save profile:",
+        profileError.message
+      );
+
+      if (
+        profileError.code ===
+        "23505"
+      ) {
+        setError(
+          "That display name is already in use. Please choose another."
+        );
+      } else {
+        setError(
+          "Could not save your profile. Please try again."
+        );
+      }
+
+      setLoading(false);
+      return;
+    }
+
+    console.log(
+      "Profile saved successfully."
+    );
+
+    await refreshProfile();
+
+    console.log(
+      "Profile refreshed."
+    );
+
+    setLoading(false);
+
+    /*
+     * No router.replace() is necessary.
+     *
+     * Once AuthContext receives the profile,
+     * _layout.tsx changes from:
+     *
+     * session + no profile
+     *
+     * to:
+     *
+     * session + profile
+     *
+     * and Expo Router exposes the main app.
+     */
   }
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+    >
       <View style={styles.card}>
         <Text style={styles.title}>
           Choose your name
         </Text>
 
-        <Text style={styles.subtitle}>
-          This is how other members will see you.
+        <Text
+          style={
+            styles.subtitle
+          }
+        >
+          This is how other people
+          will see you in GroupFinance.
+        </Text>
+
+        <Text style={styles.label}>
+          Display name
         </Text>
 
         <TextInput
           style={styles.input}
-          placeholder="e.g. John Doe"
+          placeholder="John Doe"
           placeholderTextColor="#9CA3AF"
           value={displayName}
-          onChangeText={setDisplayName}
+          onChangeText={(value) => {
+            setDisplayName(value);
+            setError("");
+          }}
           maxLength={40}
+          editable={!loading}
+          autoCapitalize="words"
         />
+
+        {error ? (
+          <Text
+            style={
+              styles.errorText
+            }
+          >
+            {error}
+          </Text>
+        ) : null}
 
         <Pressable
           style={[
             styles.button,
-            (!displayName.trim() || loading) &&
+            (!displayName.trim() ||
+              loading) &&
               styles.buttonDisabled,
           ]}
-          onPress={handleCreateProfile}
+          onPress={
+            handleContinue
+          }
           disabled={
-            !displayName.trim() || loading
+            !displayName.trim() ||
+            loading
           }
         >
-          <Text style={styles.buttonText}>
-            {loading
-              ? "Creating..."
-              : "Continue"}
-          </Text>
+          {loading ? (
+            <ActivityIndicator
+              color="white"
+            />
+          ) : (
+            <Text
+              style={
+                styles.buttonText
+              }
+            >
+              Continue
+            </Text>
+          )}
         </Pressable>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingTop: 90,
-  },
+const styles =
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor:
+        "#F9FAFB",
+      alignItems: "center",
+      paddingHorizontal: 24,
+      paddingTop: 90,
+    },
 
-  card: {
-    width: "100%",
-    maxWidth: 440,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 28,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
+    card: {
+      width: "100%",
+      maxWidth: 440,
+      backgroundColor: "white",
+      borderRadius: 20,
+      padding: 28,
+      borderWidth: 1,
+      borderColor: "#E5E7EB",
+    },
 
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#111827",
-  },
+    title: {
+      fontSize: 30,
+      fontWeight: "700",
+      color: "#111827",
+    },
 
-  subtitle: {
-    fontSize: 15,
-    color: "#6B7280",
-    marginTop: 8,
-    marginBottom: 24,
-  },
+    subtitle: {
+      fontSize: 16,
+      color: "#6B7280",
+      lineHeight: 23,
+      marginTop: 8,
+      marginBottom: 28,
+    },
 
-  input: {
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: "#111827",
-  },
+    label: {
+      fontSize: 14,
+      fontWeight: "600",
+      color: "#374151",
+      marginBottom: 8,
+    },
 
-  button: {
-    backgroundColor: "#111827",
-    paddingVertical: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 18,
-  },
+    input: {
+      borderWidth: 1,
+      borderColor: "#D1D5DB",
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 14,
+      fontSize: 16,
+      color: "#111827",
+      backgroundColor: "white",
+    },
 
-  buttonDisabled: {
-    opacity: 0.4,
-  },
+    errorText: {
+      fontSize: 14,
+      color: "#DC2626",
+      lineHeight: 20,
+      marginTop: 12,
+    },
 
-  buttonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-});
+    button: {
+      backgroundColor: "#111827",
+      paddingVertical: 15,
+      borderRadius: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      minHeight: 50,
+      marginTop: 24,
+    },
+
+    buttonDisabled: {
+      opacity: 0.45,
+    },
+
+    buttonText: {
+      color: "white",
+      fontSize: 16,
+      fontWeight: "600",
+    },
+  });
